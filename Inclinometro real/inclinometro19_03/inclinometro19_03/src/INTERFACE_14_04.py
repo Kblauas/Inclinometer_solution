@@ -14,10 +14,10 @@ from datetime import datetime
 import random
 
 # Definições de variaveis
-SERIAL_PORT = 'COM42' # porta usada #COM42 pra teste sem estar conectado
+SERIAL_PORT = 'COM4' # porta usada #COM42 pra teste sem estar conectado
 BAUD_RATE = 115200
-HEADER_BYTE = 0XAA
-PACKET_SIZE = 13 # de 0 a 12 bytes
+HEADER_BYTE = 0XFF
+PACKET_SIZE = 9 # de 0 a 12 bytes
 MAX_DATA_POINTS = 1000
 SCALE_FACTOR = 100.0 # usado para converter os valores recebidos para float
 SAVE_FOLDER = os.path.expanduser("~/Desktop/dados_gravados")
@@ -33,11 +33,15 @@ class SerialReader:
     def connect(self): #testar a leitura da porta serial
         try:
             self.ser = serial.Serial(self.port, self.baud_rate, timeout=1)
+            print(f"Serial aberto: {self.ser.is_open}")
+            print(f"Porta: {self.ser.port}")
+            print("Porta aberta e OK") # pra teste
         except SerialException as e:
             print(f"Erro ao abrir a porta {self.port}: {e}")
             self.ser = None
         
     def read_data(self):
+        print(f"Bytes disponiveis na serial {self.ser.in_waiting}")
         if not self.ser or not self.ser.is_open:
             print("Porta serial não está disponível")
             self.connect()  # Tenta reconectar
@@ -48,11 +52,17 @@ class SerialReader:
             if self.ser.in_waiting >= PACKET_SIZE:
                 dados = self.ser.read(PACKET_SIZE)
 
+                if len(dados) == PACKET_SIZE:
+                    print(f"Tamanho certo: {len(dados)} bytes")
+                    return None
+
                 if dados[0] == HEADER_BYTE: # cabeçalho válido
-                    roll, pitch, yaw, dev_r, dev_p, dev_y = struct.unpack('>hhhhhh', dados[1:])
+                    roll, pitch, yaw, dev_r, dev_p, dev_y = struct.unpack('>hhhh', dados[1:])
+                    print("Buffer OK") # pra teste
                     return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev_r, dev_p, dev_y)]
                 else:
                     self.ser.reset_input_buffer()
+                    print("Resetando")
         except SerialException as e:
             print(f"Erro na leitura serial: {e}")
             self.ser.close()
@@ -71,9 +81,6 @@ class DynamicPlotApp:
         self.root = root
         self.root.title("Monitor do Inclinômetro")
         self.serial_reader = SerialReader(SERIAL_PORT, BAUD_RATE)
-
-        self.serial_reader = None # ambos usados só para testes sem estar conectado
-        self.USE_SIMULATED_DATA = True
 
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -167,6 +174,7 @@ class DynamicPlotApp:
             self.root.after(0, self.clear_plots_display) # limpa os gráficos antes de mostrar novos dados
 
             self.collected_data = [] # para limpar a lista
+            self.serial_reader.ser.write(b"S")
             self.start_read_button.config(text="Coletando dados...", state=tk.DISABLED)
             threading.Thread(target=self._thread_colect, daemon=True).start()
 
@@ -318,7 +326,6 @@ class DynamicPlotApp:
             self.end_all() # fecha a tela se não houver dados
     
 if __name__ == "__main__":
-    print(f"Os arquivos salvos em {SAVE_FOLDER}")
     root = tk.Tk()
     app = DynamicPlotApp(root)
 
