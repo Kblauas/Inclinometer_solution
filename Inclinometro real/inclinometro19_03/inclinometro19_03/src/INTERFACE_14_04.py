@@ -27,12 +27,13 @@ class SerialReader:
         self.port = port
         self.baud_rate = baud_rate
         self.ser = None
-        self.simulated_data = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        self.simulated_data = [0.0, 0.0, 0.0, 0.0]
         self.connect()
 
     def connect(self): #testar a leitura da porta serial
         try:
             self.ser = serial.Serial(self.port, self.baud_rate, timeout=1)
+            time.sleep(1) # para garantir conexão estável
             print(f"Serial aberto: {self.ser.is_open}")
             print(f"Porta: {self.ser.port}")
             print("Porta aberta e OK") # pra teste
@@ -41,36 +42,25 @@ class SerialReader:
             self.ser = None
         
     def read_data(self):
-        print(f"Bytes disponiveis na serial {self.ser.in_waiting}")
-        if not self.ser or not self.ser.is_open:
-            print("Porta serial não está disponível")
-            self.connect()  # Tenta reconectar
-            return None #
-            #return self._simulate_data() # só para testes com a porta serial desconectada
+        while self.ser.in_waiting < PACKET_SIZE: # confirma que chegou 9 bytes
+            time.sleep(0.01) # delay para confirmam que bytes chegaram
+        
+            dados = self.ser.read(PACKET_SIZE) # lê o pacote
+            print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
 
-        try:
-            if self.ser.in_waiting >= PACKET_SIZE:
-                dados = self.ser.read(PACKET_SIZE)
+            if dados[0] != HEADER_BYTE:
+                print("Cabeçalho inválido, tentando sincronizar...")
+                # Se não for o cabeçalho, descarte um byte e tente novamente
+                self.ser.read(1)
+                return None
 
-                if len(dados) == PACKET_SIZE:
-                    print(f"Tamanho certo: {len(dados)} bytes")
-                    return None
-
-                if dados[0] == HEADER_BYTE: # cabeçalho válido
-                    roll, pitch, yaw, dev_r, dev_p, dev_y = struct.unpack('>hhhh', dados[1:])
-                    print("Buffer OK") # pra teste
-                    return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev_r, dev_p, dev_y)]
-                else:
-                    self.ser.reset_input_buffer()
-                    print("Resetando")
-        except SerialException as e:
-            print(f"Erro na leitura serial: {e}")
-            self.ser.close()
-            self.ser = None
-            return None
-        except Exception as e:
-            print(f"Erro inesperado na leitura: {e}")
-            return None
+            try:
+                roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
+                print(f"Valores convertidos: {(roll, pitch, yaw, dev)}")
+                return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
+            except struct.error as e:
+                print(f"Erro no desempacotamento: {e}")
+                return None
     
     def _simulate_data(self): # só para testes sem a serial conectada
         self.simulated_data = [x + random.uniform(-1,1) for x in self.simulated_data]
@@ -134,16 +124,14 @@ class DynamicPlotApp:
         self.pitch_data = deque(maxlen=MAX_DATA_POINTS) # eixo y
         self.yaw_data   = deque(maxlen=MAX_DATA_POINTS) # eixo z
 
-        self.devR_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation em Roll
-        self.devP_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation em Pitch
-        self.devY_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation em Yaw
+        self.dev_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation
 
     def setup_plots(self): # para configurar e ajustar os plots
         self.fig, self.axes = plt.subplots(2, 1, figsize=(10,8))
         (self.ax_angle, self.ax_dev) = self.axes.flatten()
         for ax in [self.ax_angle, self.ax_dev]:
             ax.grid(True)
-            ax.set_xlabel('Tempo (s)')
+            ax.set_xlabel('Metros (m))') # Troquei Tempo (s) por Metros(m)
 
         self.ax_angle.set_ylabel('Ângulo (°)')
         self.ax_dev.set_ylabel('Desvio (°)')
@@ -155,13 +143,14 @@ class DynamicPlotApp:
         self.line_pitch = self.ax_angle.plot([], [], label="Pitch", color="red")[0]
         self.line_yaw   = self.ax_angle.plot([], [], label="Yaw",   color="green")[0]
 
-        self.line_devR = self.ax_dev.plot([], [], label="Dev Roll",  color="cyan")[0]
-        self.line_devP = self.ax_dev.plot([], [], label="Dev Pitch", color="magenta")[0]
-        self.line_devY = self.ax_dev.plot([], [], label="Dev Yaw"  , color="orange")[0]
+        self.line_dev = self.ax_dev.plot([], [], label="Dev Roll",  color="cyan")[0]
 
         self.ax_angle.legend(loc='upper right') # deixa as legendas em um lugar fixo
         self.ax_dev.legend(loc='upper right')
         self.fig.tight_layout(pad=3.0)
+
+        self.ax_angle.set_ylim(-180, 180)
+        self.ax_dev.set_ylim(0, 360)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.get_tk_widget().grid(row=1, column=0, columnspan=2)
@@ -173,14 +162,15 @@ class DynamicPlotApp:
 
             self.root.after(0, self.clear_plots_display) # limpa os gráficos antes de mostrar novos dados
 
-            self.collected_data = [] # para limpar a lista
-            self.serial_reader.ser.write(b"S")
+            self.collected_data = [] # para limpar a lista de dados coletados
+            self.serial_reader.ser.write(b"S") # envia o comando para o dispositivo
+
             self.start_read_button.config(text="Coletando dados...", state=tk.DISABLED)
             threading.Thread(target=self._thread_colect, daemon=True).start()
 
     def _thread_colect(self):
         try:
-            for _ in range(10):
+            for i in range(10):
                 if not self.active_colect: 
                     break
 
@@ -188,13 +178,11 @@ class DynamicPlotApp:
                     self.data = self.serial_reader.read_data()
                 
                 if self.data:
-                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                    self.collected_data.append((timestamp, *self.data))
-                    self.all_data.append((self.depth[self.indice], *self.data))
-
-                    # pra atualiar a interface a cada leitura
-                    self.root.after(0, lambda: self.status_label.config(text=f'Coletado {len(self.collected_data)}/10'))
-
+                    self.root.after(0, lambda: self.status_label.config(text=f'Coletado {len(self.collected_data)}/10')) # mostra a cada leitura
+                    if i == 9:
+                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                        self.collected_data.append((self.depth[self.indice], *self.data)) # troquei timestamp por self.depth[self.indice]
+                        self.all_data.append((self.depth[self.indice], *self.data))
                 time.sleep(.1)
             self.plotting_active = False
         except Exception as e:
@@ -212,9 +200,7 @@ class DynamicPlotApp:
             self.line_pitch.set_data(self.time_data, self.pitch_data)
             self.line_yaw.set_data(self.time_data, self.yaw_data)
 
-            self.line_devR.set_data(self.time_data, self.devR_data)
-            self.line_devP.set_data(self.time_data, self.devP_data)
-            self.line_devY.set_data(self.time_data, self.devY_data)
+            self.line_dev.set_data(self.time_data, self.dev_data)
 
             self.ax_angle.relim()
             self.ax_angle.autoscale_view(True, True, True)
@@ -236,29 +222,22 @@ class DynamicPlotApp:
                         self.roll_data.append(data[0])
                         self.pitch_data.append(data[1])
                         self.yaw_data.append(data[2])
-                        self.devR_data.append(data[3])
-                        self.devP_data.append(data[4])
-                        self.devY_data.append(data[5])
+                        self.dev_data.append(data[3])
 
                 self.root.after(0, self._update_plots)
-            #time.sleep(0.05)
-            time.sleep(2) # testar 
+            #time.sleep(.5)
 
     def clear_plots_display(self):
         self.time_data.clear()
         self.roll_data.clear()
         self.pitch_data.clear()
         self.yaw_data.clear()
-        self.devR_data.clear()
-        self.devP_data.clear()
-        self.devY_data.clear()
+        self.dev_data.clear()
         
         self.line_roll.set_data([], [])
         self.line_pitch.set_data([], [])
         self.line_yaw.set_data([], [])
-        self.line_devR.set_data([], [])
-        self.line_devP.set_data([], [])
-        self.line_devY.set_data([], [])
+        self.line_dev.set_data([], [])
         
         self.canvas.draw_idle()
 
@@ -293,7 +272,7 @@ class DynamicPlotApp:
                 filename = os.path.join(SAVE_FOLDER, f"dados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
             with open(filename, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
-                writer.writerow(['Profundidade', 'Roll', 'Pitch', 'Yaw', 'DeviationR', 'DeviationP', 'DeviationY'])
+                writer.writerow(['Profundidade', 'Roll', 'Pitch', 'Yaw', 'Deviation'])
                 writer.writerows(self.all_data)            
             self.tela_popup(filename)  # ativa a tela de popup
             print(f'Dados salvos em {filename}')
