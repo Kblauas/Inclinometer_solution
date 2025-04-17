@@ -53,21 +53,22 @@ void app_poll()
         
         measure_count++;
 
-        if (measure_count >= 100) {
-            measure_count = 0;  // Agora reseta corretamente quando atinge 100!
+        if (measure_count >= 50) {
+            measure_count = 0;  // Agora reseta corretamente quando atinge 50!
             incl_state = SEND_MEASURE;
         }
         break;
 
     case SEND_MEASURE:
         Serial.println("Mandando as medidas");
-        rs485_send_data(&filterAvg); 
-        filter_apply(&filterComp, &filterButter, &filterAvg);
+        rs485_send_data(&filterAvg);
+        //filter_apply(&filterComp, &filterButter, &filterAvg);
+         
         sent_count++;
-        float depth;
-        depth+=L;
+        //float depth;
+        //depth+=L;
 
-        if (sent_count == 1) {
+        if (sent_count == 11) {
             filter_clear(&filterComp, &filterButter, &filterAvg); 
             
             sent_count = 0;

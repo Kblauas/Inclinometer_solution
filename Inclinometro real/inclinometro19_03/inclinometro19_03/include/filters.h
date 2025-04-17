@@ -9,7 +9,7 @@
 #include "math.h"
 
 #define ALPHA 0.3f         
-#define MOVING_AVG_SIZE 100
+#define MOVING_AVG_SIZE 50
 #define L 0.5
 #define fs 100 //100Hz
 #define fc 5//Hz

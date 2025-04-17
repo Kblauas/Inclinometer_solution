@@ -26,7 +26,7 @@ void filter_complementary_update(FILTER_COMPLEMENTARY_PTR filterComp) {
     //float ay = atan2f(accel.y,(sqrt(accel.x*accel.x)+sqrt(accel.z*accel.z)))*(RAD_TO_DEG);
     //float az = atan2f(accel.z,(sqrt(accel.x*accel.x)+sqrt(accel.y*accel.y)))*(RAD_TO_DEG);
 
-    float dt = 1.0f;
+    float dt = 0.01f;
     float gyro_ox = (filterComp->roll) + (sensorControl.mpu_gyro_x*dt)*RAD_TO_DEG;
     float gyro_oy  = (filterComp->pitch)  + (sensorControl.mpu_gyro_y*dt)*RAD_TO_DEG;
     float gyro_oz = (filterComp->yaw) + (sensorControl.mpu_gyro_z*dt)*RAD_TO_DEG;
@@ -162,19 +162,19 @@ void filter_apply(FILTER_COMPLEMENTARY_PTR filterComp, FILTER_BUTTERWORTH_ANGLES
     float filtered_pitch = filter_butterworth_update(&(filterButter->bw_pitch), filterComp->pitch);
     float filtered_yaw = filter_butterworth_update(&(filterButter->bw_yaw), filterComp->yaw);
 
-    Serial.print("Butterworth Roll: "); Serial.println(filtered_roll, 6);
-    Serial.print("Butterworth Pitch: "); Serial.println(filtered_pitch, 6);
-    Serial.print("Butterworth Yaw: "); Serial.println(filtered_yaw, 6);
+    //Serial.print("Butterworth Roll: "); Serial.println(filtered_roll, 6);
+    //Serial.print("Butterworth Pitch: "); Serial.println(filtered_pitch, 6);
+    //Serial.print("Butterworth Yaw: "); Serial.println(filtered_yaw, 6);
 
     // Atualiza o filtro de média móvel
     filter_moving_avg_update(filterAvg, filtered_roll, filtered_pitch, filtered_yaw);
     filter_moving_avg_calculate(filterAvg);
 
-    Serial.print("Moving Avg Roll: "); Serial.println(filterAvg->avg_roll, 6);
-    Serial.print("Moving Avg Pitch: "); Serial.println(filterAvg->avg_pitch, 6);
-    Serial.print("Moving Avg Yaw: "); Serial.println(filterAvg->avg_yaw, 6);
+    //Serial.print("Moving Avg Roll: "); Serial.println(filterAvg->avg_roll, 6);
+    //Serial.print("Moving Avg Pitch: "); Serial.println(filterAvg->avg_pitch, 6);
+    //Serial.print("Moving Avg Yaw: "); Serial.println(filterAvg->avg_yaw, 6);
 
-    delay(100);
+    delay(10);
 }
 
 

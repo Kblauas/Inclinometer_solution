@@ -48,24 +48,24 @@ void rs485_send_data(FILTER_MOVING_AVERAGE_PTR filterAvg)
   buffer[7] = data.bytes[1];
   buffer[8] = data.bytes[0];
 
-  int16_t angX = ((int16_t)buffer[1] << 8) | buffer[2];
-  int16_t angY = ((int16_t)buffer[3] << 8) | buffer[4];
-  int16_t angZ = ((int16_t)buffer[5] << 8) | buffer[6];
-  int16_t gyroX = ((int16_t)buffer[7] << 8) | buffer[8];
+  //int16_t angX = ((int16_t)buffer[1] << 8) | buffer[2];
+  //int16_t angY = ((int16_t)buffer[3] << 8) | buffer[4];
+  //int16_t angZ = ((int16_t)buffer[5] << 8) | buffer[6];
+  //int16_t dev = ((int16_t)buffer[7] << 8) | buffer[8];
 
   //float adxl_angl_x = angX / 100.0;
   //float adxl_angl_y = angY / 100.0;
   //float adxl_angl_z = angZ / 100.0;
-  //float mpu_gyro_x   = gyroX / 100.0;
+  //float dev_roll   = dev / 100.0;
 
-  //Serial.print("adxl_angl_x: ");
-  //Serial.println(adxl_angl_x);
-  //Serial.print("adxl_angl_y: ");
+  //Serial.print("Sent Buffer: Roll: ");
+  //Serial.print(adxl_angl_x);
+  //Serial.print(" Pitch: ");
   //Serial.println(adxl_angl_y);
-  //Serial.print("adxl_angl_z: ");
+  //Serial.print(" Yaw: ");
   //Serial.println(adxl_angl_z);
-  //Serial.print("mpu_gyro_x: ");
-  //Serial.println(mpu_gyro_x);
+  //Serial.print(" Deviation: ");
+  //Serial.println(dev_roll);
 
 
   #ifdef DEBUG
@@ -79,7 +79,7 @@ void rs485_send_data(FILTER_MOVING_AVERAGE_PTR filterAvg)
 
   mySerial.write(buffer, 9);
 
-  mySerial.flush();
+  mySerial.flush(); //precisa desse flush
 
   digitalWrite(RE, LOW);
   //delay(10);
