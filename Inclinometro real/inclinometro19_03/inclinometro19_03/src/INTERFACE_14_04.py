@@ -12,6 +12,7 @@ import time
 import csv
 from datetime import datetime
 import random
+import queue
 
 # Definições de variaveis
 SERIAL_PORT = 'COM4' # porta usada #COM42 pra teste sem estar conectado
@@ -82,6 +83,7 @@ class DynamicPlotApp:
         self.root = root
         self.root.title("Monitor do Inclinômetro")
         self.serial_reader = SerialReader(SERIAL_PORT, BAUD_RATE)
+        self.data_queue = queue.Queue()
 
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -91,6 +93,17 @@ class DynamicPlotApp:
         self.create_widgets()
         self.setup_plots()   
         self.start_plot_updater()    
+        self._start_serial_thread()
+
+    def _start_serial_thread(self):
+        def serial_real_loop():
+            while not self.stop_event.is_set():
+                if self.serial_reader.ser and self.serial_reader.ser.is_open:
+                    self.data = self.serial_reader.read_data()
+                    if self.data:
+                        self.data_queue.put((time.time(), self.data))
+                time.sleep(0.01)
+        threading.Thread(target=serial_real_loop, daemon=True).start()
     
     def start_plot_updater(self):
         if not hasattr(self, 'plot_update_thread'):
@@ -182,27 +195,25 @@ class DynamicPlotApp:
 
     def _thread_collect(self):
         try:
-            #for i in range(10):
-            if not self.active_colect: 
-                 return None
+            for i in range(10):
+                if not self.active_colect: 
+                    return None
 
-            self.data = None
-            start_time = time.time()
+                self.data = None
+                start_time = time.time()
 
-            while time.time() - start_time < 1.0:
-                with self.lock:
-                    self.data = self.serial_reader.read_data()
+                while time.time() - start_time < 1.0:
+                    if not self.data_queue.empty():
+                        timestamp, self.data = self.data_queue.get_nowait()
+                        break
+                    time.sleep(0.05)
                 if self.data:
-                    break
-                time.sleep(0.05)
-            if self.data:
-                self.root.after(0, lambda: self.status_label.config(text=f'Coletado /10')) # mostra a cada leitura
-                #if i == 9:
-                #    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                #    self.collected_data.append((self.depth[self.indice], *self.data)) # troquei timestamp por self.depth[self.indice]
-                #    self.all_data.append((self.depth[self.indice], *self.data))
-            else:
-                print(f"Falha na leitura: /10")
+                    self.root.after(0, lambda: self.status_label.config(text=f'Coletado /10')) # mostra a cada leitura
+                    if i == 9:
+                        self.collected_data.append((self.depth[self.indice], *self.data)) # troquei timestamp por self.depth[self.indice]
+                        self.all_data.append((self.depth[self.indice], *self.data))
+                else:
+                    print(f"Falha na leitura: /10")
             time.sleep(0.1)
             self.plotting_active = False
         except Exception as e:
@@ -243,17 +254,14 @@ class DynamicPlotApp:
         while not self.stop_event.is_set():
             if self.plotting_active and not self.paused:
                 try:
-                    data = self.serial_reader.read_data()
-                    if data:
-                        with self.lock:
-                            current_time = time.time()
-                            if len(self.time_data) == 0 or current_time - self.time_data[-1] > 0.1:
-                                self.time_data.append(current_time)
-                                self.roll_data.append(data[0])
-                                self.pitch_data.append(data[1])
-                                self.yaw_data.append(data[2])
-                                self.dev_data.append(data[3])
-                                self.root.after(0, self._update_plots)
+                    while not self.data_queue.empty():
+                        timestamp, data = self.data_queue.get_nowait()
+                        self.time_data.append(timestamp)
+                        self.roll_data.append(data[0])
+                        self.pitch_data.append(data[1])
+                        self.yaw_data.append(data[2])
+                        self.dev_data.append(data[3])
+                        self.root.after(0, self._update_plots)
                 except Exception as e:
                     print(f"Erro na thread the plotagem: {e}")
             time.sleep(0.05)
