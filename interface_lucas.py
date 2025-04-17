@@ -174,8 +174,9 @@ class DynamicPlotApp:
             threading.Thread(target=self._thread_colect, daemon=True).start()
 
 
-    def _thread_colect(self):
+    def _thread_collect(self):
         try:
+            self.plotting_active = False
             for _ in range(10):
                 if not self.active_colect: 
                     break
@@ -192,7 +193,7 @@ class DynamicPlotApp:
                     self.root.after(0, lambda: self.status_label.config(text=f'Coletado {len(self.collected_data)}/10'))
 
                 time.sleep(.1)
-            self.plotting_active = False
+            self.plotting_active = True
         except Exception as e:
             print(f"Erro na coleta: {e}")
         finally:
@@ -220,12 +221,16 @@ class DynamicPlotApp:
             print(f"Erro ao atulizar os plots: {e}")
 
     def _update_plots_thread(self):
+        print("Thread de plot iniciada!") 
         while not self.stop_event.is_set():
             if self.plotting_active and not self.paused:
                 data = self.serial_reader.read_data()
                 if data:
                     with self.lock:
-                        current_time = time.time()
+                        if not self.time_data:
+                            start_time = time.time()
+                            self.start_time = start_time
+                        current_time = time.time() - self.start_time
                         self.time_data.append(current_time)
                         self.roll_data.append(data[0])
                         self.pitch_data.append(data[1])
