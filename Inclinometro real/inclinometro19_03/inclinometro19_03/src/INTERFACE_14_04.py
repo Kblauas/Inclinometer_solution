@@ -27,12 +27,13 @@ class SerialReader:
         self.port = port
         self.baud_rate = baud_rate
         self.ser = None
+        self.timeout = 1.0
         self.simulated_data = [0.0, 0.0, 0.0, 0.0]
         self.connect()
 
     def connect(self): #testar a leitura da porta serial
         try:
-            self.ser = serial.Serial(self.port, self.baud_rate, timeout=1)
+            self.ser = serial.Serial(self.port, self.baud_rate, timeout=self.timeout)
             time.sleep(1) # para garantir conexão estável
             print(f"Serial aberto: {self.ser.is_open}")
             print(f"Porta: {self.ser.port}")
@@ -42,25 +43,34 @@ class SerialReader:
             self.ser = None
         
     def read_data(self):
+        if not self.ser or not self.ser.is_open:
+            print("Porta serial nao esta aberta")
+            return None
+        
         while self.ser.in_waiting < PACKET_SIZE: # confirma que chegou 9 bytes
             time.sleep(0.01) # delay para confirmam que bytes chegaram
         
+        try:
+            self.ser.reset_input_buffer()
             dados = self.ser.read(PACKET_SIZE) # lê o pacote
+            if not dados or len(dados) < PACKET_SIZE:
+                print(f"Pacote incompleto recebido: {len(dados)}")
+                return None
+
             print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
 
             if dados[0] != HEADER_BYTE:
-                print("Cabeçalho inválido, tentando sincronizar...")
+                print(f"Cabeçalho inválido {hex(dados[0])}, tentando sincronizar...")
                 # Se não for o cabeçalho, descarte um byte e tente novamente
                 self.ser.read(1)
                 return None
 
-            try:
-                roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
-                print(f"Valores convertidos: {(roll, pitch, yaw, dev)}")
-                return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
-            except struct.error as e:
-                print(f"Erro no desempacotamento: {e}")
-                return None
+            roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
+            print(f"Valores convertidos: {(roll, pitch, yaw, dev)}")
+            return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
+        except struct.error as e:
+            print(f"Erro no leitura: {e}")
+            return None
     
     def _simulate_data(self): # só para testes sem a serial conectada
         self.simulated_data = [x + random.uniform(-1,1) for x in self.simulated_data]
@@ -160,37 +170,54 @@ class DynamicPlotApp:
             self.active_colect = True
             self.plotting_active = True
 
-            self.root.after(0, self.clear_plots_display) # limpa os gráficos antes de mostrar novos dados
-
+            self.clear_plots_display()
             self.collected_data = [] # para limpar a lista de dados coletados
+            
             self.serial_reader.ser.write(b"S") # envia o comando para o dispositivo
 
             self.start_read_button.config(text="Coletando dados...", state=tk.DISABLED)
-            threading.Thread(target=self._thread_colect, daemon=True).start()
+            self.status_label.config(text="Iniciando coleta...")
+            threading.Thread(target=self._thread_collect, daemon=True).start()
 
-    def _thread_colect(self):
+    def _thread_collect(self):
         try:
-            for i in range(10):
-                if not self.active_colect: 
-                    break
+            #for i in range(10):
+            if not self.active_colect: 
+                 return None
 
+            self.data = None
+            start_time = time.time()
+
+            while time.time() - start_time < 1.0:
                 with self.lock:
                     self.data = self.serial_reader.read_data()
-                
                 if self.data:
-                    self.root.after(0, lambda: self.status_label.config(text=f'Coletado {len(self.collected_data)}/10')) # mostra a cada leitura
-                    if i == 9:
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                        self.collected_data.append((self.depth[self.indice], *self.data)) # troquei timestamp por self.depth[self.indice]
-                        self.all_data.append((self.depth[self.indice], *self.data))
-                time.sleep(.1)
+                    break
+                time.sleep(0.05)
+            if self.data:
+                self.root.after(0, lambda: self.status_label.config(text=f'Coletado /10')) # mostra a cada leitura
+                #if i == 9:
+                #    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                #    self.collected_data.append((self.depth[self.indice], *self.data)) # troquei timestamp por self.depth[self.indice]
+                #    self.all_data.append((self.depth[self.indice], *self.data))
+            else:
+                print(f"Falha na leitura: /10")
+            time.sleep(0.1)
             self.plotting_active = False
         except Exception as e:
-            print(f"Erro na coleta: {e}")
+            print(f"Erro na thread da coleta: {e}")
         finally:
-            self.active_colect = False
-            self.root.after(0, lambda: self.status_label.config(text="Pronto" if len(self.collected_data) == 10 else "Coleta interrompida"))
-            self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
+            self.root.after(0, self._finish_collect)
+
+    def _finish_collect(self):
+        self.active_colect = False
+        success = len(self.collected_data) >= 9
+        self.root.after(0, lambda: self.status_label.config(text="Pronto" if success else "Coleta interrompida"))
+        self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
+        self._go_deeper()
+
+    def _go_deeper(self):
+        if self.indice + 1 < len(self.depth):
             self.indice+= 1
             self.depth_label.config(text=f"Medindo: {self.depth[self.indice]} metros")
 
@@ -214,18 +241,21 @@ class DynamicPlotApp:
     def _update_plots_thread(self):
         while not self.stop_event.is_set():
             if self.plotting_active and not self.paused:
-                data = self.serial_reader.read_data()
-                if data:
-                    with self.lock:
-                        current_time = time.time()
-                        self.time_data.append(current_time)
-                        self.roll_data.append(data[0])
-                        self.pitch_data.append(data[1])
-                        self.yaw_data.append(data[2])
-                        self.dev_data.append(data[3])
-
-                self.root.after(0, self._update_plots)
-            #time.sleep(.5)
+                try:
+                    data = self.serial_reader.read_data()
+                    if data:
+                        with self.lock:
+                            current_time = time.time()
+                            if len(self.time_data) == 0 or current_time - self.time_data[-1] > 0.1:
+                                self.time_data.append(current_time)
+                                self.roll_data.append(data[0])
+                                self.pitch_data.append(data[1])
+                                self.yaw_data.append(data[2])
+                                self.dev_data.append(data[3])
+                                self.root.after(0, self._update_plots)
+                except Exception as e:
+                    print(f"Erro na thread the plotagem: {e}")
+            time.sleep(0.05)
 
     def clear_plots_display(self):
         self.time_data.clear()
