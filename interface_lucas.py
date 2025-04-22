@@ -44,10 +44,12 @@ class SerialReader:
 
         
     def read_data(self):
-    # Aguarda até que haja 9 bytes disponíveis
+        start = time.time()
         while self.ser.in_waiting < PACKET_SIZE:
-            time.sleep(0.01)  # Pequeno delay para esperar os bytes chegarem
-    
+            if time.time() - start > 1:  # Timeout de 1 segundo
+                print("Timeout ao aguardar dados da serial.")
+                return None
+        time.sleep(0.01)
     # Lê exatamente o pacote inteiro
         dados = self.ser.read(PACKET_SIZE)
         print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
@@ -165,7 +167,7 @@ class DynamicPlotApp:
             self.active_colect = True
             self.plotting_active = True
 
-            self.root.after(0, self.clear_plots_display)  # Limpa os gráficos antes de mostrar novos dados
+            # self.root.after(0, self.clear_plots_display)  # Limpa os gráficos antes de mostrar novos dados
 
             self.collected_data = []  # Limpa a lista de dados coletados
             self.serial_reader.ser.write(b"S")  # Envia o comando para o dispositivo
@@ -174,35 +176,60 @@ class DynamicPlotApp:
             threading.Thread(target=self._thread_colect, daemon=True).start()
 
 
-    def _thread_collect(self):
+    def _thread_colect(self):
         try:
-            self.plotting_active = False
+            self.plotting_active = False  # Desativa atualização automática de gráfico
+
             for _ in range(10):
-                if not self.active_colect: 
+                if not self.active_colect:
                     break
 
                 with self.lock:
                     self.data = self.serial_reader.read_data()
-                
+
                 if self.data:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                     self.collected_data.append((timestamp, *self.data))
                     self.all_data.append((self.depth[self.indice], *self.data))
 
-                    # pra atualiar a interface a cada leitura
-                    self.root.after(0, lambda: self.status_label.config(text=f'Coletado {len(self.collected_data)}/10'))
+                # Atualiza os dados para plotar
+                    if not self.time_data:
+                        self.start_time = time.time()
 
-                time.sleep(.1)
-            self.plotting_active = True
+                    current_time = time.time() - self.start_time
+                    self.time_data.append(current_time)
+                    self.roll_data.append(self.data[0])
+                    self.pitch_data.append(self.data[1])
+                    self.yaw_data.append(self.data[2])
+                    self.dev_data.append(self.data[3])
+
+                # Atualiza o gráfico na interface
+                    self.root.after(0, self._update_plots)
+
+                # Atualiza status na interface
+                    self.root.after(0, lambda count=len(self.collected_data): self.status_label.config(text=f'Coletado {count}/10'))
+
+                time.sleep(0.1)  # Intervalo entre leituras
+
         except Exception as e:
             print(f"Erro na coleta: {e}")
         finally:
+            self.plotting_active = True
             self.active_colect = False
-            self.root.after(0, lambda: self.status_label.config(text="Pronto" if len(self.collected_data) == 10 else "Coleta interrompida"))
-            self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
-            self.indice+= 1
-            self.depth_label.config(text=f"Medindo: {self.depth[self.indice]} metros")
 
+        # Atualiza status final
+            self.root.after(0, lambda: self.status_label.config(
+                text="Pronto" if len(self.collected_data) == 10 else "Coleta interrompida"))
+
+            self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
+
+            self.indice += 1
+            if self.indice < len(self.depth):
+                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]} metros")
+            else:
+                self.depth_label.config(text="Fim da sequência")
+
+                
     def _update_plots(self):
         try:
             self.line_roll.set_data(self.time_data, self.roll_data)
