@@ -11,8 +11,7 @@ import struct
 import time
 import csv
 from datetime import datetime
-import queue
-# Erro atual, erro critico na leitura: index out of range
+# ERRO Atual, sempre lê só 1 valor e repete 10 vezes
 
 # Definições de variaveis
 SERIAL_PORT = 'COM4' # porta usada #COM42 pra teste sem estar conectado
@@ -28,77 +27,58 @@ class SerialReader:
         self.port = port
         self.baud_rate = baud_rate
         self.ser = None
-        self.timeout = 2.0
-        self.error_count = 0
-        self.max_errors = 5
+        self.active = False
         self.connect()
 
-    def connect(self): #testar a leitura da porta serial
+    def set_active(self, active):
+        self.active = active
+
+    def connect(self):
         try:
-            self.ser = serial.Serial(self.port, self.baud_rate, timeout=self.timeout)
-            self.ser.reset_input_buffer()
-            self.ser.reset_output_buffer()
-            time.sleep(2) # para garantir conexão estável
+            self.ser = serial.Serial(self.port, self.baud_rate, timeout=1)
+            time.sleep(1)  # Aguarda um segundo para garantir que a conexão seja estável
             print(f"Serial aberto: {self.ser.is_open}")
             print(f"Porta: {self.ser.port}")
-            print("Porta aberta e OK") # pra teste
+            print("Porta aberta e OK")  # Para teste
         except SerialException as e:
             print(f"Erro ao abrir a porta {self.port}: {e}")
             self.ser = None
         
     def read_data(self):
-        if not self.ser or not self.ser.is_open:
-            print("Porta serial nao esta aberta")
-            self._reconnect()
+        if not self.active: # para não ler se não estiver ativo
             return None
         
-        self.ser.reset_input_buffer()
+        start = time.time()
+        while self.ser.in_waiting < PACKET_SIZE:
+            if time.time() - start > 1:  # Timeout de 1 segundo
+                print("Timeout para guardar os 10 pacotes da serial.")
+                return None
+        time.sleep(0.01)
+    # Lê exatamente o pacote inteiro
+        dados = self.ser.read(PACKET_SIZE)
+        print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
+    
+    # Verifica se o primeiro byte é o cabeçalho esperado
+        if dados[0] != HEADER_BYTE:
+            print("Cabeçalho inválido, tentando sincronizar...")
+        # Se não for o cabeçalho, descarte um byte e tente novamente
+            self.ser.read(1)
+            return None
 
+    # Desempacota os dados (usando os 8 bytes restantes)
         try:
-            for attempt in range(3):
-                header = self.ser.read(1)
-                start_time = time.time()
-                while header and header[0] != HEADER_BYTE:
-                    if time.time() - start_time > self.timeout:
-                        print("Timeout na sincronização do cabeçalho")
-                        break
-                    header = self.ser.read(1)
-                if not header:
-                    print(f"Timeout cabeçalho,header = {header[0]}, tentativa {attempt+1}/3")
-                    continue
-
-                remaining_bytes = self.ser.read(PACKET_SIZE-1)
-                if len(remaining_bytes) < PACKET_SIZE - 1:
-                    print(f"Pacote incompleto: tentativa {attempt+1}/{PACKET_SIZE}")
-                    continue
-            
-                dados = header + remaining_bytes
-                print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
-
-                try:
-                    roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
-                    self.error_count = 0
-                    return [roll/SCALE_FACTOR, pitch/SCALE_FACTOR, yaw/SCALE_FACTOR, dev/SCALE_FACTOR]
-                except struct.error as e:
-                    print(f"Erro na decodificação: {e}")
-                    continue
-        except Exception as e:
-            print(f"Erro critico na leitura: {e}")
-            self._reconnect()
+            roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
+            print(f"Valores convertidos: {(roll, pitch, yaw, dev)}")
+            return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
+        except struct.error as e:
+            print(f"Erro no desempacotamento: {e}")
             return None
-        
-    def _reconnect(self):
-        if self.ser and self.ser.is_open:
-            self.ser.close()
-        self.connect()
-        self.error_count = 0
 
 class DynamicPlotApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Monitor do Inclinômetro")
         self.serial_reader = SerialReader(SERIAL_PORT, BAUD_RATE)
-        self.data_queue = queue.Queue()
 
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
@@ -106,13 +86,7 @@ class DynamicPlotApp:
         # inicializa as variáveis
         self.setup_variables()
         self.create_widgets()
-        self.setup_plots()   
-        self.start_plot_updater()
-    
-    def start_plot_updater(self):
-        if not hasattr(self, 'plot_update_thread'):
-            self.plot_update_thread = threading.Thread(target=self._update_plots_thread, daemon=True)
-            self.plot_update_thread.start()
+        self.setup_plots()
 
     def create_widgets(self): # para criar os elementos em tela
         top_frame = ttk.Frame(self.root)
@@ -126,7 +100,7 @@ class DynamicPlotApp:
         self.start_read_button = ttk.Button(top_frame, text="Iniciar Leitura e Gravação", command=self.read_and_record)
         self.start_read_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
-        self.depth_label = ttk.Label(top_frame, text=f'Medindo: {self.depth[self.indice]} metros')
+        self.depth_label = ttk.Label(top_frame, text=f'Medindo: {self.depth[self.indice]:.1f} metros')
         self.depth_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
         self.status_label = ttk.Label(top_frame, text="Pronto")
@@ -144,22 +118,22 @@ class DynamicPlotApp:
         self.save_on_exit = True
         self.collected_data = []
         self.all_data = []
-        self.depth = [str(x) for x in [0.5 + i*0.5 for i in range(40) if 0.5 + i*0.5 <= 20.0]] # criar valores a cada 0.5 até 20.0
+        self.depth = [0.5 + i*0.5 for i in range(40) if 0.5 + i*0.5 <= 20.0] # criar floats a cada 0.5 até 20.0
 
         self.depth_data  = deque(maxlen=MAX_DATA_POINTS) # eixo x dos gráficos
 
         self.roll_data  = deque(maxlen=MAX_DATA_POINTS) # eixo x
         self.pitch_data = deque(maxlen=MAX_DATA_POINTS) # eixo y
         self.yaw_data   = deque(maxlen=MAX_DATA_POINTS) # eixo z
-
-        self.dev_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation
+        self.dev_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation total
 
     def setup_plots(self): # para configurar e ajustar os plots
         self.fig, self.axes = plt.subplots(2, 1, figsize=(10,8))
         (self.ax_angle, self.ax_dev) = self.axes.flatten()
         for ax in [self.ax_angle, self.ax_dev]:
             ax.grid(True)
-            ax.set_xlabel('Metros (m))') # Troquei Tempo (s) por Metros(m)
+            ax.set_xlabel('Profundidade (m)')
+            ax.set_xlim(0, 20) # Profundidade máxima
 
         self.ax_angle.set_ylabel('Ângulo (°)')
         self.ax_dev.set_ylabel('Desvio (°)')
@@ -172,101 +146,88 @@ class DynamicPlotApp:
         self.line_yaw   = self.ax_angle.plot([], [], label="Yaw",   color="green")[0]
 
         self.line_dev = self.ax_dev.plot([], [], label="Dev Roll",  color="cyan")[0]
+   
 
         self.ax_angle.legend(loc='upper right') # deixa as legendas em um lugar fixo
         self.ax_dev.legend(loc='upper right')
         self.fig.tight_layout(pad=3.0)
-
-        self.ax_angle.set_ylim(-180, 180)
-        self.ax_dev.set_ylim(0, 360)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
         self.canvas.get_tk_widget().grid(row=1, column=0, columnspan=2)
 
     def read_and_record(self):
         if not self.active_colect:
-            self.active_colect = True                
-            self.plotting_active = True
+            self.active_colect = True
+            self.serial_reader.set_active(True) # ativa a leitura serial
 
-            self.clear_plots_display()
-            self.collected_data = [] # para limpar a lista de dados coletados
-            
-            if self.serial_reader.ser and self.serial_reader.ser.is_open:
-                self.serial_reader.ser.write(b"R") # reset
-                time.sleep(0.5)
-                self.serial_reader.ser.write(b"S") # começar coleta
+            self.collected_data = []  # Limpa a lista de dados coletados
+            self.serial_reader.ser.write(b"S")  # Envia o comando para o dispositivo
 
             self.start_read_button.config(text="Coletando dados...", state=tk.DISABLED)
-            self.status_label.config(text="Iniciando coleta...")
-            threading.Thread(target=self._thread_collect, daemon=True).start()
+            threading.Thread(target=self._thread_colect, daemon=True).start()
 
-    def _thread_collect(self):
+    def _thread_colect(self):
         try:
-            temp_data = [] # para salvar os dados sem plotar
-            success_count = 0
-            unique_data_count = 0
+            self.serial_reader.set_active(True)
 
-            while success_count < 15 and unique_data_count < 10:
-                if not self.active_colect: 
-                    break
-
-                self.data = None
-                start_time = time.time()
-
-                while time.time() - start_time < 2.0:
-                    self.data = self.serial_reader.read_data()
-                    time.sleep(0.1)
-                if self.data:
-                    success_count += 1
-                    if not temp_data or any(abs(data[i] - temp_data[-1][1][i]) > 0.01 for i in range(4)): # dado é diferente?
-                        temp_data.append((self.depth[self.indice], self.data))
-                        success_count += 1
-                        self.root.after(0, lambda: self.status_label.config(text=f'Coletado {success_count}/10')) # mostra a cada leitura
-                        break
-                    time.sleep(0.1)
-                if success_count >= 10:
-                    break
-                
-            if success_count > 0: # para plotar só na 10a medição
+            with self.lock:
                 self.depth_data.clear()
                 self.roll_data.clear()
                 self.pitch_data.clear()
                 self.yaw_data.clear()
                 self.dev_data.clear()
 
-                for depthX, data in temp_data:
-                    self.depth_data.append(float(depthX))
-                    self.roll_data.append(data[0])
-                    self.pitch_data.append(data[1])
-                    self.yaw_data.append(data[2])
-                    self.dev_data.append(data[3])
-                self.root.after(0, self._update_plots)
-                self.all_data.extend(temp_data)
-
-        except Exception as e:
-            print(f"Erro na thread da coleta: {e}")
+            self.serial_reader.ser.reset_input_buffer()
+            received_data = []
+            timeout = time.time() + 2
+            while len(received_data) < 10 and time.time() < timeout:
+                pacote = self.serial_reader.read_data()
+                if pacote:
+                    current_depth = float(self.depth[self.indice])
+                    self.all_data.append((current_depth, *pacote))
+                    received_data.append(pacote)
+                    
+                    if len(received_data) == 10:
+                        with self.lock:
+                            self.depth_data.append(current_depth)
+                            self.roll_data.append(pacote[0])
+                            self.pitch_data.append(pacote[1])
+                            self.yaw_data.append(pacote[2])
+                            self.dev_data.append(pacote[3])
+                # Atualiza status na interface
+                        self.root.after(0, self._update_plots)
+                    self.root.after(0, lambda c=len(received_data): self.status_label.config(text=f'Coletado {c}/10'))
         finally:
-            self.root.after(0, self._finish_collect)
+            self.serial_reader.set_active(False)
+            self.active_colect = False
 
-    def _finish_collect(self):
-        self.active_colect = False
-        success = len(self.collected_data) >= 9
-        self.root.after(0, lambda: self.status_label.config(text="Pronto" if success else "Coleta interrompida"))
-        self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
-        self._go_deeper()
+        # Atualiza status final
+            self.root.after(0, lambda: self.status_label.config(text="Pronto" if len(self.all_data) >= 10 * (self.indice +1) else "Coleta interrompida"))
 
-    def _go_deeper(self):
-        if self.indice + 1 < len(self.depth):
-            self.indice+= 1
-            self.depth_label.config(text=f"Medindo: {self.depth[self.indice]} metros")
+            self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
 
+            self.indice += 1
+            if self.indice < len(self.depth):
+                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros")
+            else:
+                self.depth_label.config(text="Fim da sequencia")
+                
     def _update_plots(self):
         try:
-            self.line_roll.set_data(self.depth_data, self.roll_data)
-            self.line_pitch.set_data(self.depth_data, self.pitch_data)
-            self.line_yaw.set_data(self.depth_data, self.yaw_data)
+            if not self.depth_data or not self.roll_data:
+                return
+            
+            depth = list(self.depth_data)
+            roll = list(self.roll_data)
+            pitch = list(self.pitch_data)
+            yaw = list(self.yaw_data)
+            dev = list(self.dev_data)
 
-            self.line_dev.set_data(self.depth_data, self.dev_data)
+            self.line_roll.set_data(depth, roll)
+            self.line_pitch.set_data(depth, pitch)
+            self.line_yaw.set_data(depth, yaw)
+
+            self.line_dev.set_data(depth, dev)
 
             self.ax_angle.relim()
             self.ax_angle.autoscale_view(True, True, True)
@@ -278,30 +239,21 @@ class DynamicPlotApp:
             print(f"Erro ao atulizar os plots: {e}")
 
     def _update_plots_thread(self):
+        print("Thread de plot iniciada!") 
         while not self.stop_event.is_set():
-            if not self.plotting_active or self.paused:
-                time.sleep(0.05)
-                continue
-            try:
-                while not self.data_queue.empty():
-                    timestamp, data = self.data_queue.get_nowait()
-            except Exception as e:
-                print(f"Erro na thread the plotagem: {e}")
-            time.sleep(0.05)
+            if self.plotting_active and not self.paused:
+                if hasattr(self.serial_reader, 'active') and self.serial_reader.active:
+                    data = self.serial_reader.read_data()
+                    if data:
+                        with self.lock:
+                            self.depth_data.append(float(self.depth[self.indice]))
+                            self.roll_data.append(data[0])
+                            self.pitch_data.append(data[1])
+                            self.yaw_data.append(data[2])
+                            self.dev_data.append(data[3])
 
-    def clear_plots_display(self):
-        self.depth_data.clear()
-        self.roll_data.clear()
-        self.pitch_data.clear()
-        self.yaw_data.clear()
-        self.dev_data.clear()
-        
-        self.line_roll.set_data([], [])
-        self.line_pitch.set_data([], [])
-        self.line_yaw.set_data([], [])
-        self.line_dev.set_data([], [])
-        
-        self.canvas.draw_idle()
+                        self.root.after(0, self._update_plots)
+                time.sleep(0.05)
 
     def tela_popup(self, nome_local):
         popup = tk.Toplevel(self.root)
@@ -335,12 +287,13 @@ class DynamicPlotApp:
             with open(filename, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
                 writer.writerow(['Profundidade', 'Roll', 'Pitch', 'Yaw', 'Deviation'])
-                writer.writerows(self.all_data)            
+                for i, (depth, roll, pitch, yaw, dev) in enumerate(self.all_data):
+                    writer.writerow([depth, roll, pitch, yaw, dev])
             self.tela_popup(filename)  # ativa a tela de popup
             print(f'Dados salvos em {filename}')
             return True
         except Exception as e:
-            #self.status_label.config(text=f"Erro ao salvar: {str(e)}")
+            self.status_label.config(text=f"Erro ao salvar: {str(e)}")
             print(f'Erro ao salvar {str(e)}')
             return False
 
@@ -358,6 +311,7 @@ class DynamicPlotApp:
 
     def on_close(self):
         print("Fechando a aplicação...")
+        self.serial_reader.set_active(False)
 
         if self.save_on_exit and self.all_data:
             self.save_on_exit = False
