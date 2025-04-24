@@ -62,7 +62,7 @@ void app_poll()
     case SEND_MEASURE:
         Serial.println("Mandando as medidas");
         rs485_send_data(&filterAvg);
-        //filter_apply(&filterComp, &filterButter, &filterAvg);
+        filter_apply(&filterComp, &filterButter, &filterAvg);
          
         sent_count++;
         //float depth;

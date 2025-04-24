@@ -11,7 +11,6 @@ import struct
 import time
 import csv
 from datetime import datetime
-# ERRO Atual, sempre lê só 1 valor e repete 10 vezes
 
 # Definições de variaveis
 SERIAL_PORT = 'COM4' # porta usada #COM42 pra teste sem estar conectado
@@ -51,12 +50,12 @@ class SerialReader:
         start = time.time()
         while self.ser.in_waiting < PACKET_SIZE:
             if time.time() - start > 1:  # Timeout de 1 segundo
-                print("Timeout para guardar os 10 pacotes da serial.")
+                #print("Timeout para guardar os 10 pacotes da serial.") # para avisar caso deu erro
                 return None
         time.sleep(0.01)
     # Lê exatamente o pacote inteiro
         dados = self.ser.read(PACKET_SIZE)
-        print(f"Dados brutos recebidos: {[hex(b) for b in dados]}")
+        #print(f"Dados brutos recebidos: {[hex(b) for b in dados]}") # para confirmar os dados recebidos
     
     # Verifica se o primeiro byte é o cabeçalho esperado
         if dados[0] != HEADER_BYTE:
@@ -68,7 +67,7 @@ class SerialReader:
     # Desempacota os dados (usando os 8 bytes restantes)
         try:
             roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
-            print(f"Valores convertidos: {(roll, pitch, yaw, dev)}")
+            #print(f"Valores convertidos: {(roll, pitch, yaw, dev)}") # para verificar os dados
             return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
         except struct.error as e:
             print(f"Erro no desempacotamento: {e}")
@@ -128,28 +127,28 @@ class DynamicPlotApp:
         self.dev_data   = deque(maxlen=MAX_DATA_POINTS) # desvio/desviation total
 
     def setup_plots(self): # para configurar e ajustar os plots
-        self.fig, self.axes = plt.subplots(2, 1, figsize=(10,8))
-        (self.ax_angle, self.ax_dev) = self.axes.flatten()
-        for ax in [self.ax_angle, self.ax_dev]:
+        self.fig, self.axes = plt.subplots(2, 2, figsize=(10,8))
+        (self.ax_roll, self.ax_pitch, self.ax_yaw, self.ax_dev) = self.axes.flatten()
+        for ax in [self.ax_roll, self.ax_pitch, self.ax_yaw, self.ax_dev]:
             ax.grid(True)
             ax.set_xlabel('Profundidade (m)')
             ax.set_xlim(0, 20) # Profundidade máxima
 
-        self.ax_angle.set_ylabel('Ângulo (°)')
-        self.ax_dev.set_ylabel('Desvio (°)')
+        self.ax_roll.set_ylabel ('Ângulo (°)')
+        self.ax_pitch.set_ylabel('Ângulo (°)')
+        self.ax_yaw.set_ylabel  ('Ângulo (°)')
+        self.ax_dev.set_ylabel  ('Desvio (°)')
 
-        self.ax_angle.set_title('Dados dos Ângulos')
-        self.ax_dev.set_title('Desvio dos Ângulos')
+        self.ax_roll.set_title ('Dados dos Ângulos do Roll')
+        self.ax_pitch.set_title('Dados dos Ângulos do Pitch')
+        self.ax_yaw.set_title  ('Dados dos Ângulos do Yaw')
+        self.ax_dev.set_title  ('Desvio dos Ângulos')
 
-        self.line_roll  = self.ax_angle.plot([], [], label="Roll",  color="blue")[0]
-        self.line_pitch = self.ax_angle.plot([], [], label="Pitch", color="red")[0]
-        self.line_yaw   = self.ax_angle.plot([], [], label="Yaw",   color="green")[0]
+        self.line_roll  = self.ax_roll.plot ( [], [], color="blue",    marker="D")[0]
+        self.line_pitch = self.ax_pitch.plot( [], [], color="red",     marker="D")[0]
+        self.line_yaw   = self.ax_yaw.plot  ( [], [], color="green",   marker="D")[0]
+        self.line_dev   = self.ax_dev.plot  ( [], [], color="magenta", marker="D")[0]
 
-        self.line_dev = self.ax_dev.plot([], [], label="Dev Roll",  color="cyan")[0]
-   
-
-        self.ax_angle.legend(loc='upper right') # deixa as legendas em um lugar fixo
-        self.ax_dev.legend(loc='upper right')
         self.fig.tight_layout(pad=3.0)
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.root)
@@ -168,49 +167,51 @@ class DynamicPlotApp:
 
     def _thread_colect(self):
         try:
-            self.serial_reader.set_active(True)
-
-            with self.lock:
-                self.depth_data.clear()
-                self.roll_data.clear()
-                self.pitch_data.clear()
-                self.yaw_data.clear()
-                self.dev_data.clear()
-
-            self.serial_reader.ser.reset_input_buffer()
             received_data = []
+            current_depth = float(self.depth[self.indice])
             timeout = time.time() + 2
-            while len(received_data) < 10 and time.time() < timeout:
+            attempts = 0
+
+            self.serial_reader.set_active(True)
+            self.serial_reader.ser.reset_input_buffer()
+
+
+            while len(received_data) < 11 and time.time() < timeout:
                 pacote = self.serial_reader.read_data()
+                attempts += 1 # para contar a quantidade caso de erro
                 if pacote:
-                    current_depth = float(self.depth[self.indice])
-                    self.all_data.append((current_depth, *pacote))
                     received_data.append(pacote)
-                    
-                    if len(received_data) == 10:
-                        with self.lock:
-                            self.depth_data.append(current_depth)
-                            self.roll_data.append(pacote[0])
-                            self.pitch_data.append(pacote[1])
-                            self.yaw_data.append(pacote[2])
-                            self.dev_data.append(pacote[3])
-                # Atualiza status na interface
-                        self.root.after(0, self._update_plots)
-                    self.root.after(0, lambda c=len(received_data): self.status_label.config(text=f'Coletado {c}/10'))
-        finally:
-            self.serial_reader.set_active(False)
-            self.active_colect = False
+                    self.all_data.append((current_depth, *pacote))
 
-        # Atualiza status final
-            self.root.after(0, lambda: self.status_label.config(text="Pronto" if len(self.all_data) >= 10 * (self.indice +1) else "Coleta interrompida"))
+                    # Atualiza status na interface
+                    self.root.after(0, lambda c=len(received_data): self.status_label.config(text=f'Coletado {c}/11'))
+                    time.sleep(0.01) # para evitar sobrecarga
+            if len(received_data) == 11:
+                last_packet = received_data[-1] # pra pegar o ultimo pacote
+                with self.lock:
+                    self.depth_data.append(current_depth)
+                    self.roll_data.append(last_packet[0])
+                    self.pitch_data.append(last_packet[1])
+                    self.yaw_data.append(last_packet[2])
+                    self.dev_data.append(last_packet[3])
 
-            self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL)
+                self.root.after(0, self._update_plots)
+                self.indice += 1 # se deu certo, vai para a próxima profundidade 
 
-            self.indice += 1
-            if self.indice < len(self.depth):
-                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros")
+                if current_depth == 20.0:
+                    self.root.after(5000, self.collectd_done)
+                    return
             else:
-                self.depth_label.config(text="Fim da sequencia")
+                self.root.after(0, lambda: self.status_label.config(text=f"Coleta interrompida {len(received_data)}/11"))
+                self.all_data = [data for data in self.all_data if data[0] != current_depth]
+            time.sleep(3) # para ver a mensagem
+            self.root.after(0, lambda: self.status_label.config(text="Pronto"))
+        finally:
+            if current_depth != 20.0: # só vai para a próxima se não chegou em 20m
+                self.serial_reader.set_active(False)
+                self.active_colect = False
+                self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL) # para voltar o texto original
+                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza a profundidade
                 
     def _update_plots(self):
         try:
@@ -218,21 +219,25 @@ class DynamicPlotApp:
                 return
             
             depth = list(self.depth_data)
-            roll = list(self.roll_data)
+            roll  = list(self.roll_data)
             pitch = list(self.pitch_data)
-            yaw = list(self.yaw_data)
-            dev = list(self.dev_data)
+            yaw   = list(self.yaw_data)
+            dev   = list(self.dev_data)
 
-            self.line_roll.set_data(depth, roll)
+            self.line_roll.set_data (depth, roll)
             self.line_pitch.set_data(depth, pitch)
-            self.line_yaw.set_data(depth, yaw)
+            self.line_yaw.set_data  (depth, yaw)
 
             self.line_dev.set_data(depth, dev)
 
-            self.ax_angle.relim()
-            self.ax_angle.autoscale_view(True, True, True)
+            self.ax_roll.relim()
+            self.ax_pitch.relim()
+            self.ax_yaw.relim()
             self.ax_dev.relim()
-            self.ax_dev.autoscale_view(True, True, True)
+            self.ax_roll.autoscale_view (True, True, True)
+            self.ax_pitch.autoscale_view(True, True, True)
+            self.ax_yaw.autoscale_view  (True, True, True)
+            self.ax_dev.autoscale_view  (True, True, True)
 
             self.canvas.draw_idle() # para atualizar o canvas
         except Exception as e:
@@ -254,6 +259,18 @@ class DynamicPlotApp:
 
                         self.root.after(0, self._update_plots)
                 time.sleep(0.05)
+
+    def collectd_done(self):
+        self.serial_reader.set_active(False)
+        self.active_colect = False
+        self.start_read_button.config(text="Coleta Finalizada", state=tk.DISABLED)
+        self.depth_label.config(text="Terminou os 20m")
+
+        if self.all_data:
+            self.save_on_exit = False
+            self.save_data()
+
+        self.root.after(5000, self.end_all) # fecha após 5 segundos
 
     def tela_popup(self, nome_local):
         popup = tk.Toplevel(self.root)
