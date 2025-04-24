@@ -139,9 +139,9 @@ class DynamicPlotApp:
         self.ax_yaw.set_ylabel  ('Ângulo (°)')
         self.ax_dev.set_ylabel  ('Desvio (°)')
 
-        self.ax_roll.set_title ('Dados dos Ângulos do Roll')
-        self.ax_pitch.set_title('Dados dos Ângulos do Pitch')
-        self.ax_yaw.set_title  ('Dados dos Ângulos do Yaw')
+        self.ax_roll.set_title ('Dados dos Ângulos de X')
+        self.ax_pitch.set_title('Dados dos Ângulos do Y')
+        self.ax_yaw.set_title  ('Dados dos Ângulos do Z')
         self.ax_dev.set_title  ('Desvio dos Ângulos')
 
         self.line_roll  = self.ax_roll.plot ( [], [], color="blue",    marker="D")[0]
