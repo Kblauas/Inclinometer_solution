@@ -21,15 +21,15 @@ void filter_complementary_update(FILTER_COMPLEMENTARY_PTR filterComp) {
     adxl_measurements(&sensorControl);
     //sensors_event_t a, g, temp;
     //mpu.getEvent(&a, &g, &temp);
-    mpu_measurements(&sensorControl);
+    //mpu_measurements(&sensorControl);
     //float ax = atan2f(accel.x,(sqrt(accel.y*accel.y)+sqrt(accel.x*accel.x)))*(RAD_TO_DEG);
     //float ay = atan2f(accel.y,(sqrt(accel.x*accel.x)+sqrt(accel.z*accel.z)))*(RAD_TO_DEG);
     //float az = atan2f(accel.z,(sqrt(accel.x*accel.x)+sqrt(accel.y*accel.y)))*(RAD_TO_DEG);
 
     float dt = 0.01f;
-    float gyro_ox = (filterComp->roll) + (sensorControl.mpu_gyro_x*dt)*RAD_TO_DEG;
-    float gyro_oy  = (filterComp->pitch)  + (sensorControl.mpu_gyro_y*dt)*RAD_TO_DEG;
-    float gyro_oz = (filterComp->yaw) + (sensorControl.mpu_gyro_z*dt)*RAD_TO_DEG;
+    float gyro_ox = (filterComp->roll); //+ (sensorControl.mpu_gyro_x*dt)*RAD_TO_DEG;
+    float gyro_oy  = (filterComp->pitch); // + (sensorControl.mpu_gyro_y*dt)*RAD_TO_DEG;
+    float gyro_oz = (filterComp->yaw); //+ (sensorControl.mpu_gyro_z*dt)*RAD_TO_DEG;
 
     //float gyro_ox = (filterComp->roll) + (g.gyro.x*dt)*RAD_TO_DEG;
     //float gyro_oy  = (filterComp->pitch)  + (g.gyro.y*dt)*RAD_TO_DEG;
