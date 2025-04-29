@@ -5,7 +5,7 @@
 void setup() {
   pins_init();
   adxl_init();
-  mpu_init();
+  //mpu_init();
   app_init();
   rs485_init();
   Serial.begin(115200);
