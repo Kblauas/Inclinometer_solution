@@ -26,8 +26,8 @@ auto range = PL::ADXL355_Range::range2g; //set range of operations
 void adxl_measurements(SENSOR_CONTROL_PTR sensorControl){
   auto accelerations = adxl355.getAccelerations();
   float h[3] = {accelerations.x, accelerations.y, accelerations.z};
-  float Ainv [3] [3] = {{0.983329,0.003401,-0.000053},{0.003401,0.976592,0.002209},{-0.000053,0.002209,0.958527}};
-  float b [3] = {-0.009316, 0.007176 , -0.04096};
+  float Ainv [3] [3] = {{0.983286,0.003250,0.000004},{0.003250,0.976451,0.002108},{0.000004,0.002108,0.958748}};
+  float b [3] = {-0.009334, 0.007129 , -0.041051};
   
 
   calib_accel_init(&sensorCalib, h, Ainv, b);
