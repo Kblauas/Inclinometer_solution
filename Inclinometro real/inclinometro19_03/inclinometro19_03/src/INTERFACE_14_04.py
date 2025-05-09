@@ -13,13 +13,15 @@ import csv
 from datetime import datetime
 
 # Definições de variaveis
-SERIAL_PORT = 'COM4' # porta usada #COM42 pra teste sem estar conectado
+SERIAL_PORT = 'COM4' # porta usada
 BAUD_RATE = 115200
 HEADER_BYTE = 0XFF
 PACKET_SIZE = 9 # de 0 a 12 bytes
 MAX_DATA_POINTS = 1000
 SCALE_FACTOR = 100.0 # usado para converter os valores recebidos para float
 SAVE_FOLDER = os.path.expanduser("~/Desktop/dados_gravados")
+DEPTH = 25 # profundidade 
+SIDE = "A" # qual lado vai ser usado
 
 class SerialReader: 
     def __init__(self, port, baud_rate):
@@ -117,7 +119,7 @@ class DynamicPlotApp:
         self.save_on_exit = True
         self.collected_data = []
         self.all_data = []
-        self.depth = [0.5 + i*0.5 for i in range(40) if 0.5 + i*0.5 <= 20.0] # criar floats a cada 0.5 até 20.0
+        self.depth = [DEPTH - i*0.5 for i in range(int(DEPTH / 0.5) + 1)] # criar floats de DEPTH até 0
 
         self.depth_data  = deque(maxlen=MAX_DATA_POINTS) # eixo x dos gráficos
 
@@ -132,7 +134,7 @@ class DynamicPlotApp:
         for ax in [self.ax_roll, self.ax_pitch, self.ax_yaw, self.ax_dev]:
             ax.grid(True)
             ax.set_xlabel('Profundidade (m)')
-            ax.set_xlim(0, 20) # Profundidade máxima
+            ax.set_xlim(DEPTH, 0) # Profunidade máxima
 
         self.ax_roll.set_ylabel ('Ângulo (°)')
         self.ax_pitch.set_ylabel('Ângulo (°)')
@@ -196,9 +198,9 @@ class DynamicPlotApp:
                     self.dev_data.append(last_packet[3])
 
                 self.root.after(0, self._update_plots)
-                self.indice += 1 # se deu certo, vai para a próxima profundidade 
+                self.indice += 1 # se deu certo, vai para a próxima DEPTH 
 
-                if current_depth == 20.0:
+                if current_depth == 0: # chegou no topo
                     self.root.after(5000, self.collectd_done)
                     return
             else:
@@ -207,11 +209,11 @@ class DynamicPlotApp:
             time.sleep(3) # para ver a mensagem
             self.root.after(0, lambda: self.status_label.config(text="Pronto"))
         finally:
-            if current_depth != 20.0: # só vai para a próxima se não chegou em 20m
+            if current_depth != 0: # só vai para a próxima se não chegou em 0m
                 self.serial_reader.set_active(False)
                 self.active_colect = False
                 self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL) # para voltar o texto original
-                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza a profundidade
+                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza a DEPTH
                 
     def _update_plots(self):
         try:
@@ -264,7 +266,7 @@ class DynamicPlotApp:
         self.serial_reader.set_active(False)
         self.active_colect = False
         self.start_read_button.config(text="Coleta Finalizada", state=tk.DISABLED)
-        self.depth_label.config(text="Terminou os 20m")
+        self.depth_label.config(text=f"Terminou os {DEPTH}m")
 
         if self.all_data:
             self.save_on_exit = False
@@ -300,10 +302,10 @@ class DynamicPlotApp:
         try:
             os.makedirs(SAVE_FOLDER, exist_ok=True)
             if not filename:
-                filename = os.path.join(SAVE_FOLDER, f"dados_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv")
+                filename = os.path.join(SAVE_FOLDER, f"dados_{datetime.now().strftime('%Y%m%d_%H%M')}_{SIDE}.csv")
             with open(filename, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
-                writer.writerow(['Profundidade', 'Roll', 'Pitch', 'Yaw', 'Deviation'])
+                writer.writerow(['DEPTH', 'Roll', 'Pitch', 'Yaw', 'Deviation'])
                 for i, (depth, roll, pitch, yaw, dev) in enumerate(self.all_data):
                     writer.writerow([depth, roll, pitch, yaw, dev])
             self.tela_popup(filename)  # ativa a tela de popup
