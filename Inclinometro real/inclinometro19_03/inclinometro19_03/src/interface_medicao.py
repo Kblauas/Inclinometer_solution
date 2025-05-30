@@ -219,6 +219,7 @@ class DynamicPlotApp(tk.Frame):
             self.serial_reader.ser.write(b"S")  # Envia o comando para o dispositivo
 
             self.start_read_button.config(text="Coletando dados...", state=tk.DISABLED)
+            self.repeat_button.config(state=tk.DISABLED)
             threading.Thread(target=self._thread_colect, daemon=True).start()
 
     def _thread_colect(self):
@@ -266,7 +267,8 @@ class DynamicPlotApp(tk.Frame):
                 self.serial_reader.set_active(False)
                 self.active_colect = False
                 self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL) # para voltar o texto original
-                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza a DEPTH
+                self.repeat_button.config(state=tk.NORMAL) # para ativar novamente
+                self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza o self.depth
 
     def repeat(self):
         if self.indice == 0: # se apertar sem rodar antes
