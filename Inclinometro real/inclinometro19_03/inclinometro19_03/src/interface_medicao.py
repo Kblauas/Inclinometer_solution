@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter.messagebox import askretrycancel
+from tkinter.messagebox import askretrycancel, showinfo
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import threading
@@ -85,11 +85,11 @@ class InitialScreen(tk.Frame):
         innerFrame.grid_columnconfigure(0, weight=1)
         innerFrame.grid_columnconfigure(1, weight=1)
 
-        ttk.Label(innerFrame, text="Digite a profundidade (em metros): \n(Para número com virgula, use .)").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(innerFrame, text="Digite a profundidade (em metros): \n(Para número com virgula, use .)").grid(row=1, column=0, sticky="w", padx=5, pady=5)
         self.depth_entry = ttk.Entry(innerFrame, textvariable=self.depth_var, width=20)
         self.depth_entry.grid(row=1, column=1, padx=5, pady=5)
 
-        ttk.Label(innerFrame, text="Digite a posição do inclinometro: \n(isso será usado no nome do arquivo)").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        ttk.Label(innerFrame, text="Digite a face do mergulho: \n(NOTA: isso será usado no nome do arquivo)").grid(row=2, column=0, sticky="n", padx=5, pady=5)
         self.side_entry = ttk.Entry(innerFrame, textvariable=self.side_var, width=20)
         self.side_entry.grid(row=2, column=1, padx=5, pady=5)
 
@@ -101,11 +101,24 @@ class InitialScreen(tk.Frame):
         try:
             depth = float(self.depth_var.get())
             side  = self.side_var.get().strip()
-            if side:
-                self.start_callback(depth, side)
-                self.destroy()
+            if not side:
+                answer = askretrycancel("AVISO!", "A face de mergulho não pode ser vazia, tente novamente")
+                if answer:
+                    self.side_entry.delete(0, tk.END)
+                return
+            
+            try:
+                ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
+                ser.close()
+            except SerialException:
+                answer = showinfo("ERRO!", f"Não foi possivel acessar a porta {SERIAL_PORT}")
+                self.master.destroy()
+                return
+            self.destroy()
+            self.start_callback(depth, side)
+
         except ValueError: # erro no valor de profundidade
-            answer = askretrycancel("AVISO!", "Profundiade errada")
+            answer = askretrycancel("AVISO!", "Profundiade inválida, tente novamente")
             if answer:
                 self.depth_entry.delete(0, tk.END)
                 self.side_entry.delete(0, tk.END)
