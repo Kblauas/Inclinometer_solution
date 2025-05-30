@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+from tkinter.messagebox import askretrycancel
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import threading
@@ -20,8 +21,6 @@ PACKET_SIZE = 9 # de 0 a 12 bytes
 MAX_DATA_POINTS = 1000
 SCALE_FACTOR = 100.0 # usado para converter os valores recebidos para float
 SAVE_FOLDER = os.path.expanduser("~/Desktop/dados_gravados")
-DEPTH = 25 # profundidade 
-SIDE = "A" # qual lado vai ser usado
 
 class SerialReader: 
     def __init__(self, port, baud_rate):
@@ -52,12 +51,10 @@ class SerialReader:
         start = time.time()
         while self.ser.in_waiting < PACKET_SIZE:
             if time.time() - start > 1:  # Timeout de 1 segundo
-                #print("Timeout para guardar os 10 pacotes da serial.") # para avisar caso deu erro
                 return None
         time.sleep(0.01)
     # Lê exatamente o pacote inteiro
         dados = self.ser.read(PACKET_SIZE)
-        #print(f"Dados brutos recebidos: {[hex(b) for b in dados]}") # para confirmar os dados recebidos
     
     # Verifica se o primeiro byte é o cabeçalho esperado
         if dados[0] != HEADER_BYTE:
@@ -69,16 +66,58 @@ class SerialReader:
     # Desempacota os dados (usando os 8 bytes restantes)
         try:
             roll, pitch, yaw, dev = struct.unpack('>hhhh', dados[1:])
-            #print(f"Valores convertidos: {(roll, pitch, yaw, dev)}") # para verificar os dados
             return [v / SCALE_FACTOR for v in (roll, pitch, yaw, dev)]
         except struct.error as e:
             print(f"Erro no desempacotamento: {e}")
             return None
 
-class DynamicPlotApp:
-    def __init__(self, root):
+class InitialScreen(tk.Frame):
+    def __init__(self, root, start_callback):
+        super().__init__(root)
+        self.start_callback = start_callback
+
+        self.depth_var = tk.StringVar()
+        self.side_var  = tk.StringVar()
+
+        innerFrame = tk.Frame(self)
+        innerFrame.pack(expand=True)
+
+        innerFrame.grid_columnconfigure(0, weight=1)
+        innerFrame.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(innerFrame, text="Digite a profundidade (em metros): \n(Para número com virgula, use .)").grid(row=1, column=0, sticky="e", padx=5, pady=5)
+        self.depth_entry = ttk.Entry(innerFrame, textvariable=self.depth_var, width=20)
+        self.depth_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        ttk.Label(innerFrame, text="Digite a posição do inclinometro: \n(isso será usado no nome do arquivo)").grid(row=2, column=0, sticky="e", padx=5, pady=5)
+        self.side_entry = ttk.Entry(innerFrame, textvariable=self.side_var, width=20)
+        self.side_entry.grid(row=2, column=1, padx=5, pady=5)
+
+        tk.Button(innerFrame, text="Confirmar e continuar", command=self.on_continue).grid(row=3, column=0, columnspan=2, pady=10)
+
+        self.pack(expand=True)
+
+    def on_continue(self):
+        try:
+            depth = float(self.depth_var.get())
+            side  = self.side_var.get().strip()
+            if side:
+                self.start_callback(depth, side)
+                self.destroy()
+        except ValueError: # erro no valor de profundidade
+            answer = askretrycancel("AVISO!", "Profundiade errada")
+            if answer:
+                self.depth_entry.delete(0, tk.END)
+                self.side_entry.delete(0, tk.END)
+
+class DynamicPlotApp(tk.Frame):
+    def __init__(self, root, depth, side):
+        super().__init__(root)
         self.root = root
-        self.root.title("Monitor do Inclinômetro")
+        self.depth_initial = depth
+        self.side = side
+        label = tk.Label(self, text="Tela de Graficos")
+        label.grid(row=0, column=0)
         self.serial_reader = SerialReader(SERIAL_PORT, BAUD_RATE)
 
         self.stop_event = threading.Event()
@@ -101,14 +140,17 @@ class DynamicPlotApp:
         self.start_read_button = ttk.Button(top_frame, text="Iniciar Leitura e Gravação", command=self.read_and_record)
         self.start_read_button.grid(row=0, column=0, padx=5, pady=5, sticky="w")
 
+        self.repeat_button = ttk.Button(top_frame, text="Repetir Última gravação", command=self.repeat)
+        self.repeat_button.grid(row=0, column=1, padx=5, pady=5, sticky="e")
+
         self.depth_label = ttk.Label(top_frame, text=f'Medindo: {self.depth[self.indice]:.1f} metros')
-        self.depth_label.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+        self.depth_label.grid(row=0, column=2, padx=5, pady=5, sticky="w")
 
         self.status_label = ttk.Label(top_frame, text="Pronto")
-        self.status_label.grid(row=0, column=2, padx=5, pady=5)
+        self.status_label.grid(row=0, column=3, padx=5, pady=5)
 
         self.close_button = ttk.Button(top_frame, text="Fechar programa", command=self.on_close)
-        self.close_button.grid(row=0, column=3, padx=20, pady=5, sticky="e")
+        self.close_button.grid(row=0, column=4, padx=20, pady=5, sticky="e")
 
     def setup_variables(self):
         self.indice = 0
@@ -119,10 +161,9 @@ class DynamicPlotApp:
         self.save_on_exit = True
         self.collected_data = []
         self.all_data = []
-        self.depth = [DEPTH - i*0.5 for i in range(int(DEPTH / 0.5) + 1)] # criar floats de DEPTH até 0
+        self.depth = [self.depth_initial - i*0.5 for i in range(int(self.depth_initial / 0.5) + 1)] # criar floats de DEPTH até 0
 
         self.depth_data  = deque(maxlen=MAX_DATA_POINTS) # eixo x dos gráficos
-
         self.roll_data  = deque(maxlen=MAX_DATA_POINTS) # eixo x
         self.pitch_data = deque(maxlen=MAX_DATA_POINTS) # eixo y
         self.yaw_data   = deque(maxlen=MAX_DATA_POINTS) # eixo z
@@ -134,7 +175,7 @@ class DynamicPlotApp:
         for ax in [self.ax_roll, self.ax_pitch, self.ax_yaw, self.ax_dev]:
             ax.grid(True)
             ax.set_xlabel('Profundidade (m)')
-            ax.set_xlim(DEPTH, 0) # Profunidade máxima
+            ax.set_xlim(self.depth_initial, 0) # Profunidade máxima
 
         self.ax_roll.set_ylabel ('Ângulo (°)')
         self.ax_pitch.set_ylabel('Ângulo (°)')
@@ -177,7 +218,6 @@ class DynamicPlotApp:
             self.serial_reader.set_active(True)
             self.serial_reader.ser.reset_input_buffer()
 
-
             while len(received_data) < 11 and time.time() < timeout:
                 pacote = self.serial_reader.read_data()
                 attempts += 1 # para contar a quantidade caso de erro
@@ -214,6 +254,35 @@ class DynamicPlotApp:
                 self.active_colect = False
                 self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.NORMAL) # para voltar o texto original
                 self.depth_label.config(text=f"Medindo: {self.depth[self.indice]:.1f} metros") # atualiza a DEPTH
+
+    def repeat(self):
+        if self.indice == 0: # se apertar sem rodar antes
+            self.status_label.config(text="Nada para repetir ainda")
+            self.start_read_button.config(text="Nenhum dado salvo", state=tk.DISABLED) # para travar a gravação
+            self.repeat_button.config(state=tk.DISABLED) # para travar a gravação
+            self.root.after(3000, self._reset_status_labels) # para esperar 3 segundos e depois atualizar os textos
+            return
+
+        if self.depth_data:
+            self.status_label.config(text="Apagando dados")
+            removed_depth = self.depth_data.pop()
+            self.all_data = [d for d in self.all_data if d[0] != removed_depth]
+            self.roll_data.pop()
+            self.pitch_data.pop()
+            self.yaw_data.pop()
+            self.dev_data.pop()
+
+            self.current_depth = removed_depth # atualiza a profundidade para manter
+            self.indice -= 1
+
+            self._update_plots()
+            self.depth_label.config(text=f"Medindo {self.depth[self.indice]:.1f} metros")
+            self.status_label.config(text="Pronto para repetir última medição")
+
+    def _reset_status_labels(self):
+        self.start_read_button.config(text="Iniciar Leitura e Gravação", state=tk.ACTIVE)
+        self.repeat_button.config(state=tk.ACTIVE)
+        self.status_label.config(text="Pronto")
                 
     def _update_plots(self):
         try:
@@ -266,7 +335,7 @@ class DynamicPlotApp:
         self.serial_reader.set_active(False)
         self.active_colect = False
         self.start_read_button.config(text="Coleta Finalizada", state=tk.DISABLED)
-        self.depth_label.config(text=f"Terminou os {DEPTH}m")
+        self.depth_label.config(text=f"Terminou os {self.depth_initial}m")
 
         if self.all_data:
             self.save_on_exit = False
@@ -302,7 +371,7 @@ class DynamicPlotApp:
         try:
             os.makedirs(SAVE_FOLDER, exist_ok=True)
             if not filename:
-                filename = os.path.join(SAVE_FOLDER, f"dados_{datetime.now().strftime('%Y%m%d_%H%M')}_{SIDE}.csv")
+                filename = os.path.join(SAVE_FOLDER, f"dados_{datetime.now().strftime('%Y%m%d_%H%M')}_{self.side}.csv")
             with open(filename, 'w', newline='', encoding='utf-8') as file:
                 writer = csv.writer(file)
                 writer.writerow(['DEPTH', 'Roll', 'Pitch', 'Yaw', 'Deviation'])
@@ -338,19 +407,44 @@ class DynamicPlotApp:
         else:
             print("Nenhum dado para ser salvo")
             self.end_all() # fecha a tela se não houver dados
-    
+
+class MainApp(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Sistema de Monitoramento do Inclinometro")
+
+        container = tk.Frame(self)
+        container.pack(fill="both", expand=True)
+
+        self.screen = {}
+
+        self.screen["inicio"] = InitialScreen(container, lambda: self.show_screen("graficos"))
+        self.screen["inicio"].grid(row=0, column=0, sticky="nsew")
+
+        self.screen["graficos"] = DynamicPlotApp(container)
+        self.screen["graficos"].grid(row=0, column=0, sticky="nsew")
+
+        self.show_screen("inicio")
+
+    def show_screen(self, screen_name):
+        screen = self.screen.get(screen_name)
+        if screen:
+            screen.tkraise()
+
 if __name__ == "__main__":
+    def start_main_app(depth, side):
+        for widget in root.winfo_children():
+            widget.destroy()
+        app = DynamicPlotApp(root, depth, side)
+        app.grid(row=0, column=0)
+
+        # Caso seja fechado clicando no "X"
+        root.protocol("WM_DELETE_WINDOW", app.on_close)
+    
     root = tk.Tk()
-    app = DynamicPlotApp(root)
+    root.title("Leitura Serial com Gráficos")
 
-    # Caso seja fechado clicando no "X"
-    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    initial_screen = InitialScreen(root, start_main_app)
+    initial_screen.grid(row=0, column=0)   
 
-    try:
-        root.mainloop()
-    finally:
-        app.stop_event.set()
-        if hasattr(app, 'serial_reader'):
-            ser = app.serial_reader.ser
-            if ser and ser.is_open:
-                ser.close()
+    root.mainloop()
