@@ -20,6 +20,8 @@ auto range = PL::ADXL355_Range::range2g; //set range of operations
   adxl355.setRange(range);  
   // Enable ADXL355 measurement
   adxl355.enableMeasurement();
+      //adxl355.setOutputDataRate(PL::ADXL355_OutputDataRate::odr1000); caso queira ativar o LPF e a ODR do sensor: consultar datasheet e biblioteca pl
+      //adxl355.setHpfFrequency(PL::ADXL355_HpfFrequency::hpf24_7); caso queira mudar a frequencia do hpf do sensor
   
 }
 
