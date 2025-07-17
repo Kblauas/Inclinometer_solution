@@ -79,15 +79,16 @@ void mpu_measurements(SENSOR_CONTROL_PTR sensorControl) //aquisição das medida
 {
   sensors_event_t a, g, temp;
   mpu.getEvent(&a, &g, &temp);
-  float offset_x =  (-0.005125*RAD_TO_DEG); //offset calculado a partir de um algorítmo externo
+  float offset_x =  (-0.005125*RAD_TO_DEG); //offset calculado a partir de um algorítmo externo, presente na pasta "calibration" do github
   float offset_y =  (0.076175*RAD_TO_DEG);
   float offset_z = (0.03181*RAD_TO_DEG);
   sensorControl->mpu_gyro_x = ((g.gyro.x)*RAD_TO_DEG)-(offset_x);
   sensorControl->mpu_gyro_y = ((g.gyro.y)*RAD_TO_DEG)-(offset_y);
   sensorControl->mpu_gyro_z = ((g.gyro.z)*RAD_TO_DEG)-(offset_z);
   //alocação dos valores calibrados ao vetor de controle
+  #ifdef DEBUG_MEASURE
   //Serial.println(sensorControl->mpu_gyro_x);
   //Serial.println(sensorControl->mpu_gyro_y);
   //Serial.println(sensorControl->mpu_gyro_z);
-  
+  #endif 
 }
