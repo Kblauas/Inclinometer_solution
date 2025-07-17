@@ -28,10 +28,6 @@ void filter_complementary_update(FILTER_COMPLEMENTARY_PTR filterComp) { //funç�
     adxl_measurements(&sensorControl);
     // mpu_measurements(&sensorControl);
     //aquisição das medidas do giroscópio e do acelerômetro
-    //float ax = atan2f(accel.x,(sqrt(accel.y*accel.y)+sqrt(accel.x*accel.x)))*(RAD_TO_DEG);
-    //float ay = atan2f(accel.y,(sqrt(accel.x*accel.x)+sqrt(accel.z*accel.z)))*(RAD_TO_DEG);
-    //float az = atan2f(accel.z,(sqrt(accel.x*accel.x)+sqrt(accel.y*accel.y)))*(RAD_TO_DEG);
-
     float dt = 0.01f; // intervalo fixo entre amostras, assumido como 10 ms
 
     float gyro_ox = (filterComp->roll);  //(sensorControl.mpu_gyro_x*dt)*RAD_TO_DEG;
@@ -40,21 +36,11 @@ void filter_complementary_update(FILTER_COMPLEMENTARY_PTR filterComp) { //funç�
 
     //definição das variáveis calculadas a partir dos valores de roll, pitch e yaw, e (quando funciona), do MPU
 
-    //float gyro_ox = (filterComp->roll) + (g.gyro.x*dt)*RAD_TO_DEG;
-    //float gyro_oy  = (filterComp->pitch)  + (g.gyro.y*dt)*RAD_TO_DEG;
-    //float gyro_oz = (filterComp->yaw) + (g.gyro.z*dt)*RAD_TO_DEG;
-
     filterComp->roll = ALPHA * gyro_ox + (1.0f - ALPHA) * sensorControl.adxl_angl_x;
     filterComp->pitch  = ALPHA * gyro_oy  + (1.0f - ALPHA) * sensorControl.adxl_angl_y;
     filterComp->yaw = ALPHA * gyro_oz + (1.0f - ALPHA) * sensorControl.adxl_angl_z;
 
     //cálculo dos valores de roll, pitch e yaw.
-
-    //filterComp->roll = ALPHA * gyro_ox + (1.0f - ALPHA) * ax;
-    //filterComp->pitch  = ALPHA * gyro_oy  + (1.0f - ALPHA) * ay;
-    //filterComp->yaw = ALPHA * gyro_oz + (1.0f - ALPHA) * az;
-
-
 
 }
 
