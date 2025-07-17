@@ -41,12 +41,14 @@ void adxl_measurements(SENSOR_CONTROL_PTR sensorControl){ //Medições
   sensorControl->adxl_angl_y = atan2f(sensorCalib.acc_y_calib,(sqrt((sensorCalib.acc_x_calib*sensorCalib.acc_x_calib)+(sensorCalib.acc_z_calib*sensorCalib.acc_z_calib))))*(RAD_TO_DEG);
   sensorControl->adxl_angl_z = atan2f(sensorCalib.acc_z_calib, (sqrt((sensorCalib.acc_x_calib*sensorCalib.acc_x_calib)+(sensorCalib.acc_y_calib*sensorCalib.acc_y_calib))))*(RAD_TO_DEG);;
   //cálculo dos ângulos, a partir das acelerações, e sua alocação no vetor sensorControl
-
-  //Serial.println(sensorCalib.acc_x_calib);
-  //Serial.println(sensorCalib.acc_y_calib);
-  //Serial.println(sensorCalib.acc_z_calib);
-  //Serial.println(sensorControl->adxl_angl_x);
-  //Serial.println(sensorControl->adxl_angl_y);
-  //Serial.println(sensorControl->adxl_angl_z);
+    
+  #ifdef DEBUG
+  Serial.println(sensorCalib.acc_x_calib);
+  Serial.println(sensorCalib.acc_y_calib);
+  Serial.println(sensorCalib.acc_z_calib);
+  Serial.println(sensorControl->adxl_angl_x);
+  Serial.println(sensorControl->adxl_angl_y);
+  Serial.println(sensorControl->adxl_angl_z);
+   #endif 
   //Prints para testes 
 }
