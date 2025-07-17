@@ -162,7 +162,7 @@ void filter_init(FILTER_COMPLEMENTARY_PTR filterComp, FILTER_BUTTERWORTH_ANGLES_
 void filter_apply(FILTER_COMPLEMENTARY_PTR filterComp, FILTER_BUTTERWORTH_ANGLES_PTR filterButter, FILTER_MOVING_AVERAGE_PTR filterAvg){//função para facilitar a aplicação de todos os filtros juntos
     filter_complementary_update(filterComp);
 
-    #ifdef DEBUG_COMPLEMENTARY
+    #ifdef DEBUG
     Serial.print("Complementary x angle: "); Serial.println(filterComp->roll, 6);
     Serial.print("Complementary y angle: "); Serial.println(filterComp->pitch, 6);
     Serial.print("Complementary z angle: "); Serial.println(filterComp->yaw, 6);
@@ -172,7 +172,7 @@ void filter_apply(FILTER_COMPLEMENTARY_PTR filterComp, FILTER_BUTTERWORTH_ANGLES
     float filtered_pitch = filter_butterworth_update(&(filterButter->bw_pitch), filterComp->pitch);
     float filtered_yaw = filter_butterworth_update(&(filterButter->bw_yaw), filterComp->yaw);
 
-    #ifdef DEBUG_BUTTER
+    #ifdef DEBUG
     Serial.print("Butterworth x angle: "); Serial.println(filtered_roll, 6);
     Serial.print("Butterworth y angle: "); Serial.println(filtered_pitch, 6);
     Serial.print("Butterworth z angle: "); Serial.println(filtered_yaw, 6);
@@ -182,7 +182,7 @@ void filter_apply(FILTER_COMPLEMENTARY_PTR filterComp, FILTER_BUTTERWORTH_ANGLES
     filter_moving_avg_update(filterAvg, filtered_roll, filtered_pitch, filtered_yaw);
     filter_moving_avg_calculate(filterAvg);
 
-    #ifdef DEBUG_MOVINGAVG
+    #ifdef DEBUG
     Serial.print("Moving Avg x angle: "); Serial.println(filterAvg->avg_roll, 6);
     Serial.print("Moving Avg y angle: "); Serial.println(filterAvg->avg_pitch, 6);
     Serial.print("Moving Avg z angle: "); Serial.println(filterAvg->avg_yaw, 6);
