@@ -86,9 +86,9 @@ void mpu_measurements(SENSOR_CONTROL_PTR sensorControl) //aquisição das medida
   sensorControl->mpu_gyro_y = ((g.gyro.y)*RAD_TO_DEG)-(offset_y);
   sensorControl->mpu_gyro_z = ((g.gyro.z)*RAD_TO_DEG)-(offset_z);
   //alocação dos valores calibrados ao vetor de controle
-  #ifdef DEBUG_MEASURE
-  //Serial.println(sensorControl->mpu_gyro_x);
-  //Serial.println(sensorControl->mpu_gyro_y);
-  //Serial.println(sensorControl->mpu_gyro_z);
+  #ifdef DEBUG
+  Serial.println(sensorControl->mpu_gyro_x);
+  Serial.println(sensorControl->mpu_gyro_y);
+  Serial.println(sensorControl->mpu_gyro_z);
   #endif 
 }
