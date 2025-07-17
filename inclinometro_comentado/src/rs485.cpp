@@ -1,6 +1,11 @@
 #include "rs485.h"
 
-
+/*[RS485 PACKET STRUCTURE]
+Byte 0: Header (0xFF)
+Byte 1-2: Roll (int16_t, x100)
+Byte 3-4: Pitch (int16_t, x100)
+Byte 5-6: Yaw (int16_t, x100)
+Byte 7-8: Deviation (int16_t, x100)*/
 
 
 
@@ -31,42 +36,39 @@ void rs485_send_data(FILTER_MOVING_AVERAGE_PTR filterAvg){//função de envio de
   } data; //definição da união de valores com bytes, para facilitar os valores inscritos no buffer
 
   
-  data.value = (int16_t)(filterAvg->avg_roll* 100); //inscrição do valor de roll a ser enviado
+  data.value = (int16_t)(filterAvg->avg_roll* 100); // Converte roll médio para int16_t com 2 casas decimais (x100), e armazena no buffer
   buffer[1] = data.bytes[1];
   buffer[2] = data.bytes[0];
 
-  data.value = (int16_t)(filterAvg->avg_pitch * 100); //definição do valor de pitch a ser enviado
+  data.value = (int16_t)(filterAvg->avg_pitch * 100); /// Converte pitch médio para int16_t com 2 casas decimais (x100), e armazena no buffer
   buffer[3] = data.bytes[1];
   buffer[4] = data.bytes[0];
 
-  data.value = (int16_t)(filterAvg->avg_yaw * 100); //definição do valor de yaw a ser enviado
+  data.value = (int16_t)(filterAvg->avg_yaw * 100); // Converte yaw médio para int16_t com 2 casas decimais (x100), e armazena no buffer
   buffer[5] = data.bytes[1];
   buffer[6] = data.bytes[0];
 
-  data.value = (int16_t)(filterAvg->deviation * 100); //definição do valor de deviation a ser enviado
+  data.value = (int16_t)(filterAvg->deviation * 100); // Converte deviação médio para int16_t com 2 casas decimais (x100), e armazena no buffer
   buffer[7] = data.bytes[1];
   buffer[8] = data.bytes[0];
 
-  //int16_t angX = ((int16_t)buffer[1] << 8) | buffer[2];
-  //int16_t angY = ((int16_t)buffer[3] << 8) | buffer[4];
-  //int16_t angZ = ((int16_t)buffer[5] << 8) | buffer[6];
-  //int16_t dev = ((int16_t)buffer[7] << 8) | buffer[8];
+  #ifdef DEBUG
+  int16_t angX = ((int16_t)buffer[1] << 8) | buffer[2];
+  int16_t angY = ((int16_t)buffer[3] << 8) | buffer[4];
+  int16_t angZ = ((int16_t)buffer[5] << 8) | buffer[6];
+  int16_t dev = ((int16_t)buffer[7] << 8) | buffer[8];
 
-  //float adxl_angl_x = angX / 100.0;
-  //float adxl_angl_y = angY / 100.0;
-  //float adxl_angl_z = angZ / 100.0;
-  //float dev_roll   = dev / 100.0;
+  float adxl_angl_x = angX / 100.0;
+  float adxl_angl_y = angY / 100.0;
+  float adxl_angl_z = angZ / 100.0;
+  float dev_roll   = dev / 100.0;
 
-  //Serial.print("Sent Buffer: Roll: ");
-  //Serial.print(adxl_angl_x);
-  //Serial.print(" Pitch: ");
-  //Serial.println(adxl_angl_y);
-  //Serial.print(" Yaw: ");
-  //Serial.println(adxl_angl_z);
-  //Serial.print(" Deviation: ");
-  //Serial.println(dev_roll);
-  
-  //check para ver se está funcionando
+  Serial.print("Sent Buffer: Roll: ");Serial.print(adxl_angl_x); 
+  Serial.print(" Pitch: "); Serial.println(adxl_angl_y);
+  Serial.print(" Yaw: "); Serial.println(adxl_angl_z);
+  Serial.print(" Deviation: "); Serial.println(dev_roll);
+  #endif
+  //check para ver se está funcionando, reconstruindo os valores do buffer e realizando o print. 
 
   #ifdef DEBUG
   Serial.print("Buffer enviado: ");
@@ -110,7 +112,7 @@ bool rs485_recvCommand(RS485_CONTROL_PTR rs485Control) //função de checagem de
       indexMsg++;
       #ifdef DEBUG
       Serial.print("Recebido RS485: ");
-      Serial.println(receivedByte, HEX);// Exibe os dados no monitor serial em formato hexadecima
+      Serial.println(rs485Control->rs485_message[indexMsg], HEX);// Exibe os dados no monitor serial em formato hexadecima
       #endif
     }
     rs485Control->rs485_size = indexMsg;  //indexa o index da mensagem ao tamanho do rs485 
